@@ -97,7 +97,7 @@ Final correction-pass evidence:
 - Final pending: 0
 - Validation checks: 10 PASS, 0 FAIL
 
-The roll number remains unresolved because it was not provided. Corrected filenames therefore retain `ROLL_NUMBER_PLACEHOLDER` until the user supplies the actual number. The official unedited conversation transcript must be exported from the Codex UI with Ctrl+P; the repository contains precise instructions and does not fabricate that export.
+The user later provided roll number `22164008`. The final generated deliverables use that roll number in their filenames. The official unedited conversation transcript must still be exported from the Codex UI with Ctrl+P; the repository contains precise instructions and does not fabricate that export.
 
 ## Current user request
 
