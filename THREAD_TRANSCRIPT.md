@@ -64,6 +64,41 @@ The generated roster has 128 FTC, 12 Flex, and 12 PT employees. Its calculated m
 
 The user was told that the assignment conversation still needs to be exported manually with Ctrl+P -> Save as PDF if it is to be submitted as the official AI prompt-history document.
 
+## User - final audit correction request
+
+The user supplied an independent audit identifying issues with pending-volume accounting, PT hourly productivity, overnight shift accounting, genuine solver-based optimisation, the all-FTC baseline, independent validation, sensitivity analysis, roll-number placeholders, and the completeness of the conversation transcript. The user asked for the implementation and deliverables to be corrected rather than merely relabelled.
+
+## Assistant - final correction pass
+
+The implementation was corrected to:
+
+- Include the current Primary output in pending during the one-hour transfer delay.
+- Check cumulative incoming = cumulative Secondary completed + pending at every hourly checkpoint.
+- Use category-specific hourly rates, including four-hour PT shifts.
+- Tie overnight hours to the employee's shift-start date and attendance.
+- Solve a reduced integer headcount model with OR-Tools CP-SAT.
+- Use the solver plan as an incumbent and add only the deterministic hourly-feasibility repair buffer needed by the independent simulator.
+- Construct and independently simulate an all-FTC baseline.
+- Add explicit validation checks and exact conversation-export instructions.
+
+Final correction-pass evidence:
+
+- CP-SAT reduced-model status: OPTIMAL
+- Reduced-model objective: ₹2,496,000
+- Reduced-model bound: ₹2,496,000
+- Reduced-model gap: 0%
+- Expanded roster: 140 FTC, 13 PT, 0 Flex; 153 total employees
+- Expanded roster cost: ₹2,956,000
+- Verified all-FTC baseline: ₹3,060,000
+- Savings: ₹104,000, or 3.40%
+- Incoming: 857,000
+- Primary processed: 857,000
+- Secondary processed: 857,000
+- Final pending: 0
+- Validation checks: 10 PASS, 0 FAIL
+
+The roll number remains unresolved because it was not provided. Corrected filenames therefore retain `ROLL_NUMBER_PLACEHOLDER` until the user supplies the actual number. The official unedited conversation transcript must be exported from the Codex UI with Ctrl+P; the repository contains precise instructions and does not fabricate that export.
+
 ## Current user request
 
 The user asked for a separate GitHub repository named `Shadowfax SMM`, containing the conversations in this thread and all deliverables, so another LLM can verify them.
