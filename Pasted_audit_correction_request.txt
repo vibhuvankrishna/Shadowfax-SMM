@@ -1,0 +1,96 @@
+I had the complete repository independently audited. Several important issues were identified, so I want one final correction and verification pass before submission.
+
+Please work with the existing Shadowfax-SMM repository. Preserve the existing project and deliverable structure wherever possible, but correct the underlying implementation rather than merely changing the reported outputs.
+
+The following issues must be addressed:
+
+**1. Correct pending-volume accounting.**
+
+The current simulation reports zero pending shipments at Day 1, 00:00, despite 819 shipments having completed Primary and none having completed Secondary.
+
+Pending must include every shipment that has arrived but has not yet completed Secondary, including shipments waiting for Primary, waiting in the one-hour transfer delay, and waiting for Secondary.
+
+Use explicit conservation checks:
+
+Cumulative incoming = cumulative Secondary completed + total pending.
+
+Verify this identity at every hour, not just at the end of the month.
+
+**2. Correct PT hourly productivity.**
+
+The current code divides every category's daily capacity by eight. PT employees work four-hour shifts.
+
+Calculate capacity using the correct shift duration for each category. Independently verify daily employee capacity and hourly utilisation.
+
+**3. Fix overnight shift accounting.**
+
+For shifts crossing midnight, associate each working hour with the employee's actual shift-start date and attendance.
+
+Ensure weekly offs, employee working hours, and monthly deployment days remain consistent. Test midnight boundaries explicitly.
+
+**4. Implement genuine cost optimisation.**
+
+The existing `make_roster()` function contains a manually constructed staffing plan rather than a solver-generated optimum.
+
+Use OR-Tools CP-SAT or another appropriate integer optimisation solver to search for a lower-cost feasible roster.
+
+You may retain the existing roster as a warm start or feasible incumbent.
+
+Include fixed monthly costs, Flex deployment costs, staffing composition, employee working hours, weekly offs, stage assignments, shift timing, and hourly shipment-flow constraints.
+
+If full integrated optimisation is computationally expensive, use a reduced seven-day model, derive a valid lower bound, and improve the monthly feasible roster within the available time.
+
+Report the actual solver status, incumbent cost, lower bound, runtime, and optimality gap. Do not claim optimality without a certificate.
+
+**5. Construct a genuinely feasible all-FTC baseline.**
+
+Do not simply multiply the existing total headcount by the FTC salary.
+
+Construct an all-FTC roster, run it through the same independent hourly simulator, and validate all operational constraints.
+
+Preferably optimise this baseline as well.
+
+Only report savings against a baseline whose feasibility has been demonstrated. Clearly distinguish savings against a feasible baseline from savings against an optimal all-FTC baseline.
+
+**6. Strengthen independent validation.**
+
+Create a separate validation routine that checks the exported roster and processing schedule independently of the optimisation logic.
+
+Verify every hour's flow conservation, one-hour delay, employee shift availability, stage-specific processing capacity, FTC weekly offs, manpower composition, cost arithmetic, and final shipment clearance.
+
+Include numerical evidence for every PASS result.
+
+Do not mark a test PASS unless it actually evaluates the relevant constraint.
+
+**7. Complete the deliverables.**
+
+Regenerate the Excel workbook and PDF from the corrected solution.
+
+Preserve the assignment's three mandatory tabular formats.
+
+Replace the sensitivity-analysis placeholders with actual computed results wherever feasible. Otherwise label unperformed scenarios clearly.
+
+The repository currently contains only a summarized conversation transcript. The official submission requires the complete unedited AI conversation, including every prompt and response. If you cannot export that automatically, tell me precisely how to export it and combine it with the final PDF. Do not fabricate or reconstruct missing messages.
+
+Ensure the actual roll number replaces every filename and report placeholder before submission.
+
+**8. Final audit report.**
+
+At the end, provide a concise verification report containing:
+
+- Final workforce composition.
+- Final monthly cost.
+- Verified all-FTC baseline cost.
+- Absolute and percentage savings.
+- Solver status and optimality gap.
+- Incoming, Primary and Secondary processed totals.
+- Final pending shipments.
+- Number of validation checks passed and failed.
+- Exact filenames ready for submission.
+- Any unresolved assumptions or limitations.
+
+Please execute the corrections and regenerate the deliverables now. Do not simply explain how the issues could be fixed.
+
+If you cannot complete a correction, explicitly identify it as unresolved rather than claiming the submission is fully verified.
+
+Prioritise correctness, reproducibility and submission readiness over cosmetic improvements.
