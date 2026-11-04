@@ -1,0 +1,265 @@
+We've now completed the conceptual analysis and evaluated the modelling approaches. I think we have enough understanding to move into implementation.
+
+I want you to take ownership of the complete optimisation workflow and produce the final assignment deliverables. Please prioritise mathematical correctness, operational feasibility, cost efficiency, and independent verification over simply generating attractive spreadsheets.
+
+Use the original assignment PDF as the authoritative source of all numerical parameters and submission formats. Do not reuse any incorrect values from earlier responses.
+
+## 1. Finalise the mathematical formulation
+
+Use a Mixed-Integer Linear Programming approach, preferably implemented with Google OR-Tools CP-SAT.
+
+Our objective is to minimise total monthly manpower cost while ensuring all 857,000 shipments arriving during the 30-day period are processed through both Primary and Secondary.
+
+Model the following decisions:
+
+- Number of FTC, Flex and PT employees.
+- Fixed employee-level stage assignments (Primary or Secondary).
+- Fixed employee-level shift start and end times.
+- FTC weekly-off schedules.
+- Daily Flex deployment.
+- PT attendance according to the documented interpretation.
+- Hourly Primary and Secondary processing volumes.
+- Hourly shipment backlogs and stage-to-stage flow.
+
+The objective function must use the actual costs from the assignment: FTC ₹20,000/month, PT ₹12,000/month and Flex ₹700 per employee-deployment day.
+
+Respect the specified working hours, processing capacities, and manpower composition restrictions.
+
+Before solving, state the exact mathematical interpretation of the 80% FTC minimum and the separate 10% Flex and PT caps. If the wording permits multiple interpretations, select a defensible primary interpretation, explain it briefly, and consider the alternative in sensitivity analysis.
+
+Assume one weekly off per FTC employee per seven-day cycle unless the assignment specifies otherwise. Avoid introducing unsupported labour restrictions.
+
+## 2. Exploit the seven-day periodic structure
+
+I want to avoid unnecessary computational complexity.
+
+Start with a representative seven-day model to explore headcount requirements, shift coverage, and potential cost lower bounds.
+
+Then expand the solution to the actual 30-day horizon, consisting of four complete weeks plus Monday and Tuesday.
+
+You may use the seven-day solution as a warm start or initial feasible roster for the monthly optimisation.
+
+However, do not assume that repeating the weekly solution necessarily produces the global monthly optimum.
+
+If computationally practical, run the integrated 30-day optimisation and compare its result against the repeated seven-day solution.
+
+If full optimisation is too expensive, return the best verified feasible solution and report the solver's best objective bound and optimality gap. Do not claim global optimality without proof.
+
+## 3. Implement hourly shipment-flow constraints correctly
+
+This is one of the most important parts of the assignment.
+
+Construct a continuous hourly timeline over the 30-day planning period, including any necessary processing tail beyond Day 30.
+
+For each hour, track:
+
+- Incoming shipment volume.
+- Shipments waiting for Primary processing.
+- Primary processing capacity and actual throughput.
+- Primary-processed shipments waiting for Secondary.
+- Secondary processing capacity and actual throughput.
+- Total pending shipments.
+- Cumulative completed shipments.
+
+The one-hour gap must be respected across all hours, including midnight and day boundaries.
+
+A shipment cannot enter Secondary until at least one hour after its Primary processing.
+
+Use explicit flow-conservation equations so that shipments cannot disappear, be processed twice, or enter Secondary before Primary.
+
+Do not confuse nominal employee capacity with actual processed volume.
+
+For hourly employee productivity, use a transparent assumption consistent with the daily capacities and shift lengths, such as uniform productivity during working hours.
+
+For example, an FTC employee assigned to Secondary has a nominal capacity of 500 shipments over an eight-hour shift, corresponding to 62.5 shipments per hour. Handle fractional rates consistently while ensuring integer shipment counts and correct total capacity.
+
+Normalise the published hourly percentages, which sum to approximately 100.02%, and use a largest-remainder allocation so hourly shipment counts sum exactly to each day's prescribed volume.
+
+Allow operational queues where necessary. Do not silently force zero backlog at midnight.
+
+All shipments arriving within the 30-day period must eventually complete Secondary processing. Clearly distinguish the 30-day attendance and cost horizon from any additional processing time needed to clear the final shipments. Do not assume free labour after Day 30.
+
+If a strict daily-clearance requirement is not explicitly stated, evaluate it as an additional scenario rather than an unquestioned constraint.
+
+## 4. Solve the optimisation computationally
+
+Use Python and appropriate libraries, preferably:
+
+- Google OR-Tools CP-SAT for optimisation.
+- NumPy and Pandas for data processing and validation.
+- OpenPyXL or XlsxWriter for Excel deliverables.
+- Matplotlib or Plotly for useful analytical charts.
+
+Use actual executable code and solver results. Do not fabricate numerical outputs, optimality claims, or simulated results.
+
+Set a reasonable solver time limit and report:
+
+- Solver status.
+- Best feasible objective value.
+- Best objective bound.
+- Relative optimality gap.
+- Runtime.
+- Total FTC, Flex and PT headcount.
+- Primary and Secondary manpower allocations.
+- Monthly deployment days.
+- Total monthly cost.
+
+If the solver cannot find a feasible solution, diagnose the conflicting constraints rather than manufacturing an answer.
+
+Where possible, improve the initial solution through additional optimisation, alternative shift patterns, or a better feasible starting roster.
+
+## 5. Deliverable 1 — Complete monthly manpower roster
+
+Generate the full employee-level roster in the exact Format 1 specified in the assignment.
+
+Every employee must have:
+
+Employee ID | Category | Stage | Shift | D1 | D2 | ... | D30 | Monthly Days
+
+Use the required attendance conventions:
+
+P = Present
+O = FTC weekly off
+– = Flex not deployed
+
+For PT, use a clearly documented attendance convention consistent with the assignment.
+
+Include every employee individually, not aggregated category counts or sample rows.
+
+The roster must be derived from the actual optimisation solution, with fixed stage and shift assignments as required.
+
+Also provide useful supporting summaries showing daily headcount by category, daily Primary/Secondary staffing, and compliance with manpower restrictions.
+
+## 6. Deliverable 2 — Hourly volume planning
+
+Generate the complete hourly planning table in the exact Format 2:
+
+Day | Hour | Incoming | Primary Processed | Secondary Processed | Pending
+
+Include all 720 hours of the 30-day planning period.
+
+The Pending column should represent the total volume awaiting completion, and the underlying calculations should separately track Primary and Secondary queues.
+
+Include any additional processing-tail rows separately if needed to demonstrate that every shipment is completed.
+
+I also want a few useful visualisations, such as:
+
+- Hourly incoming volume versus processing throughput.
+- Daily manpower deployment versus shipment volume.
+- Hourly pending shipment volume.
+- Primary and Secondary capacity utilisation.
+
+These charts should help explain the operational logic rather than merely decorate the report.
+
+## 7. Deliverable 3 — Monthly cost calculation and optimisation
+
+Generate the exact Format 3 table:
+
+Category | Headcount | Deployment Days | Rate | Monthly Cost
+
+Include FTC, Flex, PT and the total.
+
+Make the treatment of deployment days precise: distinguish unique employees, total employee-days, and chargeable Flex deployment days.
+
+Calculate the actual monthly cost from the roster rather than from estimated staffing averages.
+
+Next, construct a fair all-FTC baseline by solving or otherwise establishing a feasible all-FTC roster under the same demand, shift, weekly-off and processing constraints. Treat the 80/10/10 restrictions consistently, since an all-FTC workforce is permitted by the stated caps.
+
+Calculate:
+
+- Optimised monthly cost.
+- All-FTC baseline monthly cost.
+- Absolute savings in rupees.
+- Percentage savings.
+- Cost per completed shipment.
+- Category-wise cost contribution.
+
+Do not compare against an arbitrary or operationally infeasible all-FTC baseline.
+
+If the mixed-workforce solution is not cheaper than all-FTC, report that result honestly and explain why.
+
+## 8. Independent verification and stress testing
+
+I want a separate verification routine that does not simply trust the optimiser's reported results.
+
+Reconstruct the staffing and processing calculations from the exported roster and independently verify:
+
+1. All 857,000 shipments are accounted for and processed through both stages.
+2. No shipment enters Secondary before the one-hour eligibility delay.
+3. Hourly and daily employee processing capacities are respected.
+4. Each employee works only their assigned stage and fixed shift.
+5. FTC weekly offs are correctly scheduled.
+6. Flex and PT restrictions are respected.
+7. FTC manpower remains at or above the required threshold.
+8. Every employee's monthly attendance count is correct.
+9. Monthly costs match the roster and applicable rates.
+10. All shipment queues are nonnegative, and the final backlog is zero after the permitted processing horizon.
+
+Provide a compact PASS/FAIL validation summary with actual numerical evidence.
+
+Also perform a small sensitivity analysis, ideally examining how the solution changes under a stricter end-of-day clearance requirement or an alternative defensible interpretation of the staffing caps.
+
+Keep this secondary analysis separate from the official assignment results.
+
+## 9. Produce professional final files
+
+I want the following outputs:
+
+**A. Excel workbook**
+
+Create a well-formatted Excel workbook containing separate sheets for:
+
+- Monthly Roster
+- Hourly Volume Planning
+- Monthly Cost Calculation
+- Daily Staffing Summary
+- Validation
+- Sensitivity Analysis
+
+Preserve the exact mandatory table formats in the first three sheets. Put extra analysis in separate sheets rather than modifying the prescribed structures.
+
+Use clear headers, filters, frozen panes, readable formatting and appropriate numerical formats.
+
+**B. Final assignment PDF**
+
+Prepare a professional, concise report containing:
+
+- Executive summary.
+- Problem understanding.
+- Key assumptions.
+- Mathematical optimisation formulation.
+- Solution methodology and solver configuration.
+- Optimised manpower allocation.
+- Monthly cost and all-FTC comparison.
+- Operational validation.
+- Useful charts.
+- Sensitivity findings.
+- Conclusion.
+
+Include the complete mandatory roster, hourly planning and cost tables in the final submission package, even if these require landscape pages or appendices.
+
+The final submission must also contain the complete, unedited AI conversation from the first prompt through the final response, including all intermediate questions and iterations. If you cannot programmatically access or export the full conversation, explicitly instruct me to export it using Ctrl+P → Save as PDF and combine it with the report. Do not reconstruct or invent the prompt history.
+
+Use the roll-number-at-the-end naming convention required by the assignment. If my roll number is unavailable, ask me for it or use a clearly identified placeholder.
+
+**C. Python implementation**
+
+Provide the complete executable Python source code used for optimisation, roster generation, shipment-flow simulation and validation.
+
+The implementation should be reproducible and should generate the same results when rerun.
+
+## 10. Final quality standard
+
+Please treat this as a real operations research deliverable rather than a theoretical exercise.
+
+I care about three things above everything else:
+
+1. Every shipment is processed correctly through both stages.
+2. Every staffing and operational constraint is respected.
+3. The monthly manpower cost is as low as we can rigorously establish.
+
+Don't invent results, hide infeasibility, or call a heuristic solution globally optimal.
+
+Please proceed with implementation and execution now, without another extended conceptual discussion.
+
+Only ask me a question if a missing detail makes the implementation genuinely impossible. Otherwise, state reasonable assumptions, execute the model, validate the outputs, and provide all deliverable files with a concise summary of the results.
