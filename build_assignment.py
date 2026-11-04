@@ -89,6 +89,27 @@ def make_roster(plan):
                     emps.append(Emp(f"E{n:03d}", cat, stage, shift, start, end, present)); n += 1
     return emps
 
+def shift_active(e: Emp, d: int, h: int) -> bool:
+    """Return activity using the shift-start date's attendance, including D31 00:00 tail."""
+    overnight = e.end <= e.start
+    if overnight:
+        start_day = d if h >= e.start else d - 1
+        in_shift = h >= e.start or h < e.end
+    else:
+        start_day = d
+        in_shift = e.start <= h < e.end
+    return 0 <= start_day < 30 and e.present[start_day] and in_shift
+
+def reconstructed_capacity(emps, d: int, h: int):
+    primary = 0.0; secondary = 0.0
+    for e in emps:
+        if not shift_active(e, d, h):
+            continue
+        rate = (CATS[e.cat][1] if e.stage == "Primary" else CATS[e.cat][2]) / CATS[e.cat][0]
+        if e.stage == "Primary": primary += rate
+        else: secondary += rate
+    return math.floor(primary + 1e-9), math.floor(secondary + 1e-9)
+
 def repair_hourly_feasibility(plan):
     """Use the reduced-model plan as the incumbent, then add the minimum deterministic late-shift
     FTC buffer needed by the independent 30-day simulator. This preserves the solver result while
@@ -130,18 +151,7 @@ def simulate(emps):
         incoming = incoming_by_hour.get(t, 0)
         # Primary eligible queue includes all arrivals through current hour.
         q_primary += incoming
-        pcap = 0.0
-        scap = 0.0
-        for e in emps:
-            # The 17:00-01:00 D30 Secondary shift contributes its 00:00-01:00 tail on D31.
-            active_day = (d < 30 and e.present[d]) or (d == 30 and h == 0 and e.present[29] and e.end == 1)
-            if not active_day: continue
-            if e.stage == "Primary":
-                active = (e.start <= h < e.end) if e.end > e.start else (h >= e.start or h < e.end)
-                if active: pcap += CATS[e.cat][1] / CATS[e.cat][0]
-            else:
-                active = (e.start <= h < e.end) if e.end > e.start else (h >= e.start or h < e.end)
-                if active: scap += CATS[e.cat][2] / CATS[e.cat][0]
+        pcap, scap = reconstructed_capacity(emps, d, h)
         primary = min(q_primary, pcap)
         q_primary -= primary
         # One-hour delay: current Primary output is held and becomes eligible next hour.
@@ -150,7 +160,7 @@ def simulate(emps):
         q_secondary = eligible - secondary
         delay_buffer = primary
         pending = q_primary + q_secondary + delay_buffer
-        rows.append([d+1, f"{h:02d}:00", incoming, round(primary, 6), round(secondary, 6), round(pending, 6), pcap, scap])
+        rows.append([d+1, f"{h:02d}:00", incoming, int(primary), int(secondary), int(pending), pcap, scap])
     return rows
 
 def validate(emps, rows):
@@ -158,12 +168,26 @@ def validate(emps, rows):
     checks.append(("Incoming totals", sum(r[2] for r in rows[:720]) == 857000, sum(r[2] for r in rows[:720])))
     checks.append(("Primary processed equals incoming", abs(sum(r[3] for r in rows) - 857000) < 1e-6, sum(r[3] for r in rows)))
     checks.append(("Secondary processed equals incoming", abs(sum(r[4] for r in rows) - 857000) < 1e-6, sum(r[4] for r in rows)))
-    checks.append(("Nonnegative pending", min(r[5] for r in rows) >= -1e-6, min(r[5] for r in rows)))
-    checks.append(("Final backlog zero", abs(rows[-1][5]) < 1e-6, rows[-1][5]))
-    conservation = all(abs(sum(x[2] for x in rows[:i+1]) - sum(x[4] for x in rows[:i+1]) - rows[i][5]) < 1e-6 for i in range(len(rows)))
+    checks.append(("Integer processing plan", all(all(float(r[i]).is_integer() for i in (2,3,4,5)) for r in rows), "all volume fields integer"))
+    checks.append(("Nonnegative pending", min(r[5] for r in rows) >= 0, min(r[5] for r in rows)))
+    checks.append(("Final backlog zero", rows[-1][5] == 0, rows[-1][5]))
+    conservation = all(sum(x[2] for x in rows[:i+1]) == sum(x[4] for x in rows[:i+1]) + rows[i][5] for i in range(len(rows)))
     checks.append(("Hourly conservation", conservation, "all hourly checkpoints"))
-    checks.append(("PT hourly productivity", all((r[6] >= 0 and r[7] >= 0) for r in rows), "rates use 4h PT / 8h FTC-Flex"))
-    checks.append(("FTC weekly offs", all(sum(1 for d in range(30) if not e.present[d]) >= 4 for e in emps if e.cat == "FTC"), "4+ offs"))
+    capacity_ok = all(r[3] <= r[6] and r[4] <= r[7] for r in rows)
+    checks.append(("Hourly capacity compliance", capacity_ok, "processed <= reconstructed integer capacity every hour"))
+    eligibility_ok = all(sum(x[4] for x in rows[:i+1]) <= sum(x[3] for x in rows[:i]) for i in range(len(rows)))
+    checks.append(("One-hour stage eligibility", eligibility_ok, "cumulative Secondary(t) <= cumulative Primary(t-1)"))
+    duration_ok = all((CATS[e.cat][0] == ((e.end-e.start) if e.end > e.start else (24-e.start+e.end))) for e in emps)
+    checks.append(("Shift duration", duration_ok, "FTC/Flex 8h; PT 4h"))
+    off_ok = True
+    for e in emps:
+        if e.cat != "FTC": continue
+        for k in range(4):
+            off_ok = off_ok and sum(not e.present[d] for d in range(7*k,7*k+7)) == 1
+        off_ok = off_ok and sum(not e.present[d] for d in range(28,30)) <= 1
+    checks.append(("FTC weekly offs", off_ok, "one off in each full 7-day cycle; at most one in partial cycle"))
+    pt_ok = all(((e.end-e.start if e.end > e.start else 24-e.start+e.end) == 4) for e in emps if e.cat == "PT") and CATS["PT"][1]/4 == 150 and CATS["PT"][2]/4 == 75
+    checks.append(("PT productivity", pt_ok, "Primary 600/4=150 per hour; Secondary 300/4=75 per hour"))
     # Official interpretation: Flex/PT <=10% of total headcount on every day; FTC >=80%.
     total = len(emps); flex = sum(e.cat == "Flex" for e in emps); pt = sum(e.cat == "PT" for e in emps); ftc = total-flex-pt
     checks.append(("Composition", ftc/total >= .8 and flex/total <= .1 and pt/total <= .1, f"FTC {ftc/total:.1%}; Flex {flex/total:.1%}; PT {pt/total:.1%}"))
@@ -179,6 +203,9 @@ def make_workbook(emps, rows, checks, costs, daily_summary, sens):
     wp = wb.create_sheet("Hourly Volume Planning")
     wp.append(["Day","Hour","Incoming","Primary Processed","Secondary Processed","Pending"])
     for r in rows[:720]: wp.append(r[:6])
+    wt = wb.create_sheet("D31 Processing Tail")
+    wt.append(["Day","Hour","Incoming","Primary Processed","Secondary Processed","Pending","Primary Capacity","Secondary Capacity"])
+    for r in rows[720:]: wt.append(r)
     wc = wb.create_sheet("Monthly Cost Calculation")
     wc.append(["Category","Headcount","Deployment Days","Rate","Monthly Cost"])
     for r in costs: wc.append(r)
@@ -210,10 +237,10 @@ def make_pdf(emps, rows, checks, costs, charts, solver_note, daily_summary, sens
     path = OUT / f"Assessment_Submission_{ROLL}_corrected.pdf"
     styles=getSampleStyleSheet(); styles.add(ParagraphStyle(name="Small", parent=styles["BodyText"], fontSize=7, leading=9)); styles.add(ParagraphStyle(name="Tiny", parent=styles["BodyText"], fontSize=5.5, leading=6.5))
     doc=SimpleDocTemplate(str(path),pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=9*mm,bottomMargin=9*mm)
-    story=[Paragraph("Manpower Roster Optimisation - Final Assignment Deliverables",styles["Title"]),Paragraph("Roll number: ROLL_NUMBER_PLACEHOLDER (replace before submission)",styles["BodyText"]),Spacer(1,5),Paragraph("Executive summary",styles["Heading2"]),Paragraph("This package contains a corrected-source, independently verified feasible roster and shipment-flow plan for the 30-day horizon. The staffing plan uses fixed employee-level stage and shift assignments, staggered FTC weekly offs, explicit one-hour Primary-to-Secondary eligibility, and a one-hour post-horizon processing tail. The result is reported as verified feasible; it is not labelled globally optimal because the implemented construction is a robust heuristic rather than a proven optimal MILP solve.",styles["BodyText"]),Paragraph(solver_note,styles["BodyText"]),Paragraph("Key assumptions",styles["Heading2"]),Paragraph("The 10% Flex and PT limits are interpreted as headcount shares of the fixed employee pool, with FTC at least 80%. Hourly productivity is uniform during each employee's shift. Published percentages are normalised and allocated with largest remainder. Queues may carry across hours and days; the final D30 secondary shift includes a one-hour tail into D31. No labour is assumed after that tail.",styles["BodyText"]),Paragraph("Cost summary",styles["Heading2"])]
+    story=[Paragraph("Manpower Roster Optimisation - Final Assignment Deliverables",styles["Title"]),Paragraph("Roll number: ROLL_NUMBER_PLACEHOLDER (replace before submission)",styles["BodyText"]),Spacer(1,5),Paragraph("Executive summary",styles["Heading2"]),Paragraph("This package contains a corrected-source, independently verified feasible roster and shipment-flow plan for the 30-day horizon. The staffing plan uses fixed employee-level stage and shift assignments, shift-start-date attendance for overnight work, explicit one-hour Primary-to-Secondary eligibility, integer hourly throughput, and a paid one-hour post-horizon processing tail. The final expanded roster is reported as a verified heuristic construction; the reduced CP-SAT model's bound is not attached to the repaired final roster.",styles["BodyText"]),Paragraph(solver_note,styles["BodyText"]),Paragraph("Key assumptions",styles["Heading2"]),Paragraph("The 10% Flex and PT limits are interpreted as headcount shares of the fixed employee pool, with FTC at least 80%. Hourly productivity is uniform during each employee's shift, using 4 hours for PT and 8 hours for FTC/Flex. Published percentages are normalised and allocated with largest remainder. Queues may carry across hours and days; the final D30 secondary shift includes a paid one-hour tail into D31. No labour is assumed after that tail.",styles["BodyText"]),Paragraph("Cost summary",styles["Heading2"])]
     story.append(Table([["Category","Headcount","Deployment days","Rate","Monthly cost"]]+[[str(x) for x in r] for r in costs],repeatRows=1,style=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1F4E78')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),.25,colors.grey),('FONTSIZE',(0,0),(-1,-1),8)]))
     mixed_cost = costs[-1][-1]; baseline = len(emps) * 20000; savings = baseline - mixed_cost
-    story.append(Paragraph(f"All-FTC comparison: a like-for-like 152-employee all-FTC roster costs ₹{baseline:,.0f} before any productivity benefit. The mixed roster costs ₹{mixed_cost:,.0f}, a nominal saving of ₹{savings:,.0f} ({savings/baseline:.2%}). This is a feasible comparison baseline, not a proven all-FTC optimum.", styles["BodyText"]))
+    story.append(Paragraph(f"All-FTC comparison: the independently simulated {len(emps)}-employee all-FTC roster costs ₹{baseline:,.0f}. The mixed roster costs ₹{mixed_cost:,.0f}, a saving of ₹{savings:,.0f} ({savings/baseline:.2%}). Both rosters passed the same validation routine; this is not a claim that the all-FTC roster is cost-optimal.", styles["BodyText"]))
     story += [Paragraph("Validation",styles["Heading2"]),Table([["Check","Status","Evidence"]]+[[a,"PASS" if b else "FAIL",str(c)] for a,b,c in checks],repeatRows=1,style=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1F4E78')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),.25,colors.grey),('FONTSIZE',(0,0),(-1,-1),7)]),PageBreak(),Paragraph("Operational charts",styles["Heading2"])]
     for ch in charts: story += [Image(str(ch),width=250*mm,height=85*mm),Spacer(1,3)]
     story += [PageBreak(),Paragraph("Format 1 - Monthly manpower roster",styles["Heading2"])]
@@ -237,10 +264,9 @@ def main():
     for d in range(30):
         r=rows[d*24:(d+1)*24]; daily.append([d+1,DAILY[d%7],sum(e.cat=='FTC' and e.present[d] for e in emps),sum(e.cat=='Flex' and e.present[d] for e in emps),sum(e.cat=='PT' and e.present[d] for e in emps),sum(e.stage=='Primary' and e.present[d] for e in emps),sum(e.stage=='Secondary' and e.present[d] for e in emps),round(r[-1][5],2)])
     sens=[["Base official interpretation","Feasible","Fixed-pool headcount shares; queues allowed"],["Verified all-FTC baseline",f"₹{len(baseline_emps)*20000:,.0f}",f"{len(baseline_emps)} FTC employees; independent flow checks: {'PASS' if baseline_ok else 'FAIL'}"],["Strict end-of-day clearance","Not claimed","Requires additional shift/capacity modelling"],["Daily deployed-headcount denominator","Not claimed","Would need a separate re-optimisation"]]
-    gap = abs(solver_obj-solver_bound)/max(1,abs(solver_obj))
     baseline_cost=len(baseline_emps)*20000; mixed_cost=costs[-1][-1]; savings=baseline_cost-mixed_cost
-    solver_note=f"Reduced CP-SAT status: {solver_status}; objective {solver_obj:.0f}; bound {solver_bound:.0f}; runtime {solver_runtime:.3f}s; gap {gap:.2%}. The expanded employee-level roster is independently simulated and validated. Verified all-FTC baseline: {baseline_cost:.0f}; mixed cost: {mixed_cost:.0f}; savings: {savings:.0f} ({savings/baseline_cost:.2%})."
+    solver_note=f"Reduced CP-SAT status: {solver_status}; reduced objective {solver_obj:.0f}; reduced bound {solver_bound:.0f}; runtime {solver_runtime:.3f}s. The final expanded roster was repaired for hourly feasibility, so no optimality gap is claimed for it. Verified all-FTC baseline: {baseline_cost:.0f}; final mixed cost: {mixed_cost:.0f}; savings: {savings:.0f} ({savings/baseline_cost:.2%})."
     charts=make_charts(rows,daily); xlsx=make_workbook(emps,rows,checks,costs,daily,sens); pdf=make_pdf(emps,rows,checks,costs,charts,solver_note,daily,sens)
-    print(xlsx); print(pdf); print('employees',len(emps),'cost',costs[-1][-1]); print('solver',solver_status,solver_obj,solver_bound,solver_runtime,gap); print(checks)
+    print(xlsx); print(pdf); print('employees',len(emps),'cost',costs[-1][-1]); print('solver',solver_status,solver_obj,solver_bound,solver_runtime,'final_gap=NOT_CLAIMED'); print(checks)
 
 if __name__=='__main__': main()
