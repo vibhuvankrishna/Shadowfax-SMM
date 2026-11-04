@@ -22,7 +22,7 @@ from ortools.sat.python import cp_model
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "outputs"
 OUT.mkdir(exist_ok=True)
-ROLL = "ROLL_NUMBER_PLACEHOLDER"
+ROLL = "22164008"
 
 DAILY = [30000, 35000, 25000, 27000, 36000, 35000, 10000]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -222,7 +222,7 @@ def make_workbook(emps, rows, checks, costs, daily_summary, sens):
         sh.freeze_panes = "A2"; sh.auto_filter.ref = sh.dimensions
         for cell in sh[1]: cell.font = Font(bold=True,color="FFFFFF"); cell.fill = PatternFill("solid",fgColor="1F4E78"); cell.alignment = Alignment(horizontal="center")
         for col in range(1, sh.max_column+1): sh.column_dimensions[get_column_letter(col)].width = min(max(12, max(len(str(sh.cell(r,col).value or "")) for r in range(1,min(sh.max_row,50)+1))+2), 22)
-    path = OUT / f"Assessment_Submission_{ROLL}_corrected.xlsx"; wb.save(path); return path
+    path = OUT / f"Assessment_Submission_{ROLL}.xlsx"; wb.save(path); return path
 
 def make_charts(rows, daily_summary):
     p = OUT / "charts"; p.mkdir(exist_ok=True)
@@ -234,10 +234,10 @@ def make_charts(rows, daily_summary):
     return [p1,p2,p3]
 
 def make_pdf(emps, rows, checks, costs, charts, solver_note, daily_summary, sens):
-    path = OUT / f"Assessment_Submission_{ROLL}_corrected.pdf"
+    path = OUT / f"Assessment_Submission_{ROLL}.pdf"
     styles=getSampleStyleSheet(); styles.add(ParagraphStyle(name="Small", parent=styles["BodyText"], fontSize=7, leading=9)); styles.add(ParagraphStyle(name="Tiny", parent=styles["BodyText"], fontSize=5.5, leading=6.5))
     doc=SimpleDocTemplate(str(path),pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=9*mm,bottomMargin=9*mm)
-    story=[Paragraph("Manpower Roster Optimisation - Final Assignment Deliverables",styles["Title"]),Paragraph("Roll number: ROLL_NUMBER_PLACEHOLDER (replace before submission)",styles["BodyText"]),Spacer(1,5),Paragraph("Executive summary",styles["Heading2"]),Paragraph("This package contains a corrected-source, independently verified feasible roster and shipment-flow plan for the 30-day horizon. The staffing plan uses fixed employee-level stage and shift assignments, shift-start-date attendance for overnight work, explicit one-hour Primary-to-Secondary eligibility, integer hourly throughput, and a paid one-hour post-horizon processing tail. The final expanded roster is reported as a verified heuristic construction; the reduced CP-SAT model's bound is not attached to the repaired final roster.",styles["BodyText"]),Paragraph(solver_note,styles["BodyText"]),Paragraph("Key assumptions",styles["Heading2"]),Paragraph("The 10% Flex and PT limits are interpreted as headcount shares of the fixed employee pool, with FTC at least 80%. Hourly productivity is uniform during each employee's shift, using 4 hours for PT and 8 hours for FTC/Flex. Published percentages are normalised and allocated with largest remainder. Queues may carry across hours and days; the final D30 secondary shift includes a paid one-hour tail into D31. No labour is assumed after that tail.",styles["BodyText"]),Paragraph("Cost summary",styles["Heading2"])]
+    story=[Paragraph("Manpower Roster Optimisation - Final Assignment Deliverables",styles["Title"]),Paragraph(f"Roll number: {ROLL}",styles["BodyText"]),Spacer(1,5),Paragraph("Executive summary",styles["Heading2"]),Paragraph("This package contains a corrected-source, independently verified feasible roster and shipment-flow plan for the 30-day horizon. The staffing plan uses fixed employee-level stage and shift assignments, shift-start-date attendance for overnight work, explicit one-hour Primary-to-Secondary eligibility, integer hourly throughput, and a paid one-hour post-horizon processing tail. The final expanded roster is reported as a verified heuristic construction; the reduced CP-SAT model's bound is not attached to the repaired final roster.",styles["BodyText"]),Paragraph(solver_note,styles["BodyText"]),Paragraph("Key assumptions",styles["Heading2"]),Paragraph("The 10% Flex and PT limits are interpreted as headcount shares of the fixed employee pool, with FTC at least 80%. Hourly productivity is uniform during each employee's shift, using 4 hours for PT and 8 hours for FTC/Flex. Published percentages are normalised and allocated with largest remainder. Queues may carry across hours and days; the final D30 secondary shift includes a paid one-hour tail into D31. No labour is assumed after that tail.",styles["BodyText"]),Paragraph("Cost summary",styles["Heading2"])]
     story.append(Table([["Category","Headcount","Deployment days","Rate","Monthly cost"]]+[[str(x) for x in r] for r in costs],repeatRows=1,style=[('BACKGROUND',(0,0),(-1,0),colors.HexColor('#1F4E78')),('TEXTCOLOR',(0,0),(-1,0),colors.white),('GRID',(0,0),(-1,-1),.25,colors.grey),('FONTSIZE',(0,0),(-1,-1),8)]))
     mixed_cost = costs[-1][-1]; baseline = len(emps) * 20000; savings = baseline - mixed_cost
     story.append(Paragraph(f"All-FTC comparison: the independently simulated {len(emps)}-employee all-FTC roster costs ₹{baseline:,.0f}. The mixed roster costs ₹{mixed_cost:,.0f}, a saving of ₹{savings:,.0f} ({savings/baseline:.2%}). Both rosters passed the same validation routine; this is not a claim that the all-FTC roster is cost-optimal.", styles["BodyText"]))
